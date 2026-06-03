@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ezora Voice Agent</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue-deep: #040d1e;
+      --blue-mid: #071733;
+      --blue-card: rgba(8, 22, 55, 0.72);
+      --blue-glass: rgba(16, 40, 100, 0.35);
+      --blue-rim: rgba(80, 140, 255, 0.18);
+      --blue-accent: #3b82f6;
+      --blue-bright: #60a5fa;
+      --white: #ffffff;
+      --white-muted: rgba(255,255,255,0.55);
+      --white-dim: rgba(255,255,255,0.25);
+      --white-faint: rgba(255,255,255,0.08);
+      --cyan: #7dd3fc;
+      --glow-blue: rgba(59,130,246,0.45);
+      --glow-cyan: rgba(125,211,252,0.3);
+      --danger: #ef4444;
+      --danger-bg: rgba(239,68,68,0.12);
+      --danger-rim: rgba(239,68,68,0.28);
+      --success: #34d399;
+      --success-bg: rgba(52,211,153,0.1);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--blue-deep);
+      color: var(--white);
+      overflow: hidden;
+    }
+
+    /* ── Ambient background ── */
+    .scene {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse 110% 90% at 50% 100%, #0c1e6e 0%, #050e2a 45%, #020814 100%);
+    }
+
+    /* ── Glow orb behind card ── */
+    .scene::before {
+      content: '';
+      position: absolute;
+      bottom: -6%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 75vw;
+      height: 38vh;
+      background: radial-gradient(ellipse at center, rgba(59,130,246,0.5) 0%, rgba(96,165,250,0.18) 40%, transparent 72%);
+      filter: blur(28px);
+      pointer-events: none;
+    }
+
+    /* ── Side arc glows ── */
+    .arc { position: absolute; bottom: 0; width: 36vw; height: 100vh; pointer-events: none; }
+    .arc-left  { left: -4%; background: radial-gradient(ellipse 60% 100% at 0% 100%, rgba(96,165,250,0.35) 0%, transparent 65%); }
+    .arc-right { right: -4%; background: radial-gradient(ellipse 60% 100% at 100% 100%, rgba(96,165,250,0.35) 0%, transparent 65%); }
+
+    /* ── Card ── */
+    .card {
+      position: relative;
+      width: min(440px, 94vw);
+      background: var(--blue-card);
+      border: 1px solid var(--blue-rim);
+      border-radius: 28px;
+      padding: 32px 30px 30px;
+      backdrop-filter: blur(32px) saturate(1.4);
+      -webkit-backdrop-filter: blur(32px) saturate(1.4);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04) inset,
+        0 32px 80px rgba(0,0,0,0.55),
+        0 0 60px rgba(59,130,246,0.12);
+    }
+
+    /* ── Close button ── */
+    .close-btn {
+      position: absolute;
+      top: 16px; right: 16px;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: var(--white-muted);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, color 0.2s;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.18); color: var(--white); }
+
+    /* ── Transcript area ── */
+    .transcript {
+      min-height: 80px;
+      font-size: 20px;
+      font-weight: 300;
+      line-height: 1.45;
+      color: var(--white-muted);
+      letter-spacing: -0.01em;
+    }
+    .transcript .highlight {
+      font-weight: 500;
+      color: var(--white);
+    }
+    .transcript .cursor {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--white);
+      margin-left: 4px;
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Wave canvas ── */
+    .wave-wrap {
+      width: 100%;
+      height: 120px;
+      position: relative;
+    }
+    .wave-wrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* ── Status row ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 0.06em;
+      color: var(--white-dim);
+    }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--success-bg);
+      border: 1px solid rgba(52,211,153,0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      color: var(--success);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100%{opacity:1; transform:scale(1)}
+      50%{opacity:0.5; transform:scale(0.75)}
+    }
+
+    /* ── Extraction context ── */
+    .context-box {
+      background: var(--white-faint);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 0;
+    }
+    .ctx-label { font-size: 12px; color: var(--white-dim); }
+    .ctx-value {
+      font-size: 12px; font-weight: 500;
+      color: var(--white-muted);
+      text-align: right;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+    }
+    .ctx-value.live {
+      color: var(--cyan);
+      animation: value-pop 0.4s ease;
+    }
+    @keyframes value-pop {
+      0%{opacity:0; transform:translateY(4px)}
+      100%{opacity:1; transform:translateY(0)}
+    }
+
+    /* ── Mic button ── */
+    .mic-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .mic-btn {
+      width: 70px; height: 70px;
+      border-radius: 50%;
+      background: var(--white);
+      border: none;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow:
+        0 0 0 0 rgba(255,255,255,0.3),
+        0 8px 32px rgba(0,0,0,0.4);
+      transition: transform 0.15s, box-shadow 0.15s;
+      position: relative;
+    }
+    .mic-btn svg { width: 26px; height: 26px; }
+    .mic-btn:hover { transform: scale(1.06); }
+    .mic-btn.recording {
+      background: var(--danger);
+      box-shadow:
+        0 0 0 12px var(--danger-bg),
+        0 0 0 24px rgba(239,68,68,0.05),
+        0 8px 32px rgba(239,68,68,0.35);
+      animation: mic-pulse 1.8s ease-in-out infinite;
+    }
+    .mic-btn.recording svg path { stroke: white; }
+    @keyframes mic-pulse {
+      0%,100%{box-shadow:0 0 0 10px rgba(239,68,68,0.18),0 0 0 22px rgba(239,68,68,0.06),0 8px 32px rgba(239,68,68,0.35)}
+      50%{box-shadow:0 0 0 16px rgba(239,68,68,0.1),0 0 0 30px rgba(239,68,68,0.03),0 8px 32px rgba(239,68,68,0.35)}
+    }
+    .mic-label {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--white-dim);
+      font-family: 'DM Mono', monospace;
+      text-transform: uppercase;
+    }
+
+    /* ── Connection overlay ── */
+    .overlay {
+      position: absolute; inset: 0;
+      border-radius: 28px;
+      background: var(--blue-card);
+      backdrop-filter: blur(24px);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px;
+      z-index: 10;
+      transition: opacity 0.4s;
+    }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .overlay-icon { font-size: 32px; }
+    .overlay-text { font-size: 15px; color: var(--white-muted); letter-spacing: 0.04em; }
+    .overlay-spinner {
+      width: 28px; height: 28px;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-top-color: var(--blue-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="scene">
+  <div class="arc arc-left"></div>
+  <div class="arc arc-right"></div>
+
+  <div class="card" id="card">
+
+    <div class="overlay" id="overlay">
+      <div class="overlay-spinner"></div>
+      <div class="overlay-text">Connecting to Ezora...</div>
+    </div>
+
+    <button class="close-btn" id="closeBtn" title="End call">✕</button>
+
+    <div class="transcript" id="transcript">
+      <span class="highlight" id="transcript-highlight">Ezora</span>
+      <span id="transcript-rest"> is ready.</span>
+      <span class="cursor"></span>
+    </div>
+
+    <div class="wave-wrap">
+      <canvas id="waveCanvas"></canvas>
+    </div>
+
+    <div class="status-row">
+      <span class="status-pill">
+        <span class="status-dot"></span>
+        PIPELINE ACTIVE
+      </span>
+      <span id="timer-display">00:00</span>
+    </div>
+
+    <div class="context-box">
+      <div class="ctx-label">Industry</div>
+      <div class="ctx-value" id="ctx-industry">Awaiting sync…</div>
+      <div class="ctx-label">Target CRM</div>
+      <div class="ctx-value" id="ctx-crm">Awaiting sync…</div>
+      <div class="ctx-label">Est. Call Volume</div>
+      <div class="ctx-value" id="ctx-volume">Awaiting sync…</div>
+      <div class="ctx-label">Pain Points</div>
+      <div class="ctx-value" id="ctx-pain">Awaiting sync…</div>
+    </div>
+
+    <div class="mic-wrap">
+      <button class="mic-btn" id="micBtn" title="Hold to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path stroke="#111" d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+          <path stroke="#111" d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line stroke="#111" x1="12" y1="19" x2="12" y2="23"/>
+          <line stroke="#111" x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <div class="mic-label" id="mic-label">Hold to speak</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ── CONFIG ── */
+const WS_URL = 'ws://localhost:8000/ws/chat';
+
+/* ── State ── */
+let ws = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let callActive = false;
+let startTime = null;
+let timerInterval = null;
+let animationId = null;
+let analyserNode = null;
+let audioCtx = null;
+
+/* ── Elements ── */
+const overlay       = document.getElementById('overlay');
+const transcriptEl  = document.getElementById('transcript-rest');
+const highlightEl   = document.getElementById('transcript-highlight');
+const micBtn        = document.getElementById('micBtn');
+const micLabel      = document.getElementById('mic-label');
+const closeBtn      = document.getElementById('closeBtn');
+const canvas        = document.getElementById('waveCanvas');
+const ctx2d         = canvas.getContext('2d');
+const timerDisplay  = document.getElementById('timer-display');
+
+/* ── Canvas sizing ── */
+function resizeCanvas() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width  = r.width  * devicePixelRatio;
+  canvas.height = r.height * devicePixelRatio;
+  ctx2d.scale(devicePixelRatio, devicePixelRatio);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+/* ── Idle sine wave (when no audio analyser) ── */
+let idlePhase = 0;
+function drawIdleWave() {
+  const W = canvas.width / devicePixelRatio;
+  const H = canvas.height / devicePixelRatio;
+  ctx2d.clearRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H / 2;
+  idlePhase += 0.025;
+
+  const waves = [
+    { amp: 14, freq: 0.018, phase: idlePhase,       alpha: 0.55, width: 1.5, color: '#60a5fa' },
+    { amp: 22, freq: 0.014, phase: idlePhase * 0.7,  alpha: 0.35, width: 2.2, color: '#93c5fd' },
+    { amp: 9,  freq: 0.022, phase: idlePhase * 1.3, alpha: 0.70, width: 1.0, color: '#ffffff' },
+  ];
+
+  waves.forEach(w => {
+    ctx2d.beginPath();
+    ctx2d.strokeStyle = w.color;
+    ctx2d.globalAlpha = w.alpha;
+    ctx2d.lineWidth = w.width;
+    ctx2d.shadowBlur = 0;
+
+    for (let x = 0; x <= W; x += 1.5) {
+      const y = cy + Math.sin(x * w.freq + w.phase) * w.amp;
+      x === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+    }
+    ctx2d.stroke();
+  });
+  ctx2d.globalAlpha = 1;
+
+  animationId = requestAnimationFrame(drawIdleWave);
+}
+
+/* ── Live audio wave ── */
+function drawLiveWave() {
+  const W = canvas.width / devicePixelRatio;
+  const H = canvas.height / devicePixelRatio;
+  ctx2d.clearRect(0, 0, W, H);
+
+  const bufLen = analyserNode.fftSize;
+  const buf = new Float32Array(bufLen);
+  analyserNode.getFloatTimeDomainData(buf);
+
+  const cy = H / 2;
+
+  const waves = [
+    { scale: 1.0, alpha: 0.60, width: 1.5, color: '#60a5fa' },
+    { scale: 1.5, alpha: 0.30, width: 2.5, color: '#93c5fd' },
+    { scale: 0.6, alpha: 0.80, width: 1.0, color: '#ffffff' },
+  ];
+
+  waves.forEach(w => {
+    ctx2d.beginPath();
+    ctx2d.strokeStyle = w.color;
+    ctx2d.globalAlpha  = w.alpha;
+    ctx2d.lineWidth    = w.width;
+    const step = W / bufLen;
+    for (let i = 0; i < bufLen; i++) {
+      const x = i * step;
+      const y = cy + buf[i] * H * 0.42 * w.scale;
+      i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+    }
+    ctx2d.stroke();
+  });
+  ctx2d.globalAlpha = 1;
+  animationId = requestAnimationFrame(drawLiveWave);
+}
+
+/* ── Timer ── */
+function startTimer() {
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60);
+    timerDisplay.textContent = `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+
+/* ── Transcript writer ── */
+function setTranscript(bold, rest) {
+  highlightEl.textContent = bold;
+  transcriptEl.textContent = rest ? ' ' + rest : '';
+}
+
+/* ── Lead data updater ── */
+function updateContext(lead) {
+  const map = {
+    industry:         'ctx-industry',
+    target_crm:       'ctx-crm',
+    estimated_volume: 'ctx-volume',
+    pain_points:      'ctx-pain',
+  };
+  Object.entries(map).forEach(([key, id]) => {
+    if (lead[key] !== undefined && lead[key] !== null) {
+      const el = document.getElementById(id);
+      el.textContent = String(lead[key]);
+      el.classList.add('live');
+      setTimeout(() => el.classList.remove('live'), 600);
+    }
+  });
+}
+
+/* ── Text-to-Speech (TTS) ── */
+function speakText(text) {
+  if ('speechSynthesis' in window) {
+    // Cancel any ongoing speech so they don't overlap
+    window.speechSynthesis.cancel(); 
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Optional: Tweak these to make the voice sound more natural
+    utterance.rate = 1.0; 
+    utterance.pitch = 1.0;
+    
+    // Attempt to find a native English female voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Google US English'));
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  } else {
+    console.warn("Text-to-Speech is not supported in this browser.");
+  }
+}
+
+// Preload voices
+window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+/* ── WebSocket ── */
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    overlay.classList.add('hidden');
+    callActive = true;
+    startTimer();
+    drawIdleWave();
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'greeting') {
+      setTranscript('Ezora', msg.assistant_message);
+      speakText(msg.assistant_message);
+    } else if (msg.type === 'response') {
+      setTranscript('Ezora', msg.assistant_message);
+      speakText(msg.assistant_message);
+      
+      if (msg.lead_data) updateContext(msg.lead_data);
+      if (msg.call_completed) endCall('Call completed.');
+    }
+  };
+
+  ws.onclose = () => { if (callActive) endCall('Session ended.'); };
+  ws.onerror = () => { overlay.classList.remove('hidden');
+    overlay.querySelector('.overlay-text').textContent = 'Connection failed. Retrying…';
+    setTimeout(connectWS, 3000);
+  };
+}
+
+/* ── Recording ── */
+
+/* ── Recording & Speech-to-Text ── */
+// Initialize browser Speech Recognition
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.continuous = false; // Stop when the user stops talking/releases button
+  recognition.interimResults = false; // Only send final results
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    console.log("Transcribed Text:", transcript);
+    
+    // Send the actual transcribed text to the Python backend!
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(transcript);
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error:", event.error);
+  };
+} else {
+  console.warn("Speech Recognition is not supported in this browser.");
+}
+
+async function startRecording() {
+  if (!callActive) return;
+  try {
+    // 1. Start the visual waveform (Mic visualizer)
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    window.localAudioStream = stream; // Save to stop it later
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyserNode = audioCtx.createAnalyser();
+    analyserNode.fftSize = 1024;
+    audioCtx.createMediaStreamSource(stream).connect(analyserNode);
+
+    cancelAnimationFrame(animationId);
+    drawLiveWave();
+
+    // 2. Start actual Speech-to-Text listening
+    if (recognition) {
+      recognition.start();
+    }
+    isRecording = true;
+  } catch(err) {
+    console.warn('Mic access denied:', err);
+  }
+}
+
+function stopRecording() {
+  if (isRecording) {
+    // 1. Stop Speech-to-Text (this triggers recognition.onresult to send the text)
+    if (recognition) {
+      recognition.stop();
+    }
+
+    // 2. Stop the visual waveform and turn off the mic light
+    if (window.localAudioStream) {
+      window.localAudioStream.getTracks().forEach(t => t.stop());
+    }
+    if (audioCtx && audioCtx.state !== 'closed') {
+      audioCtx.close();
+    }
+    
+    analyserNode = null;
+    cancelAnimationFrame(animationId);
+    drawIdleWave();
+    
+    isRecording = false;
+  }
+}
+
+/* ── Mic button events ── */
+micBtn.addEventListener('mousedown',  () => { micBtn.classList.add('recording');    micLabel.textContent = 'Listening…'; startRecording(); });
+micBtn.addEventListener('mouseup',    () => { micBtn.classList.remove('recording'); micLabel.textContent = 'Hold to speak'; stopRecording(); });
+micBtn.addEventListener('touchstart', e => { e.preventDefault(); micBtn.dispatchEvent(new Event('mousedown')); }, { passive: false });
+micBtn.addEventListener('touchend',   e => { e.preventDefault(); micBtn.dispatchEvent(new Event('mouseup')); });
+
+/* ── End call ── */
+function endCall(reason) {
+  callActive = false;
+  clearInterval(timerInterval);
+  cancelAnimationFrame(animationId);
+  if (ws) { ws.close(); ws = null; }
+  setTranscript('Ezora', reason || 'Call ended.');
+}
+
+closeBtn.addEventListener('click', () => endCall('Call ended by user.'));
+
+/* ── Boot ── */
+drawIdleWave();
+connectWS();
+</script>
+</body>
+</html>
