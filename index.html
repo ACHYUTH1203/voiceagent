@@ -322,7 +322,10 @@
 
 <script>
 /* ── CONFIG ── */
-const WS_URL = 'ws://localhost:8000/ws/chat';
+// CRITICAL FIX FOR RENDER: Dynamically determine ws:// or wss:// based on the deployment URL
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const host = window.location.host; // e.g., localhost:8000 OR ezora-agent.onrender.com
+const WS_URL = `${protocol}//${host}/ws/chat`;
 
 /* ── State ── */
 let ws = null;
@@ -520,8 +523,6 @@ function connectWS() {
     setTimeout(connectWS, 3000);
   };
 }
-
-/* ── Recording ── */
 
 /* ── Recording & Speech-to-Text ── */
 // Initialize browser Speech Recognition

@@ -1,5 +1,7 @@
 import json
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from typing import Dict, Any
 
 from state import AgentState
@@ -11,6 +13,17 @@ app = FastAPI(
     description="WebSocket Backend for Real-Time Voice"
 )
 
+# 1. Add this route to serve your index.html page
+@app.get("/")
+async def serve_frontend():
+    # Make sure your index.html file is in the same directory
+    html_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path)
+    return {"error": "index.html not found. Please add it to the root directory."}
+
+
+# 2. Your existing WebSocket route
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
   
@@ -32,8 +45,6 @@ async def websocket_chat(websocket: WebSocket):
             current_state["user_message"] = data
             
             # Invoke the graph 
-            # Note: For maximum concurrency in production, you should use graph.ainvoke() 
-            # if your LLM calls inside the nodes are async.
             current_state = graph.invoke(current_state)
             
             # Send the AI's response and current lead data back to the client
@@ -41,14 +52,10 @@ async def websocket_chat(websocket: WebSocket):
                 "type": "response",
                 "assistant_message": current_state["assistant_message"],
                 "lead_data": current_state.get("lead_data", {}),
-                "call_completed": current_state.get("call_completed", False)
+                "lead_score": current_state.get("lead_score", 0)
             })
             
-            # If the analytics node marked the call as complete, close the socket and capture data
             if current_state.get("call_completed"):
-                
-                # --- DATA CAPTURE LOGIC ---
-                # Divide by 2 because messages list contains both user and assistant messages
                 total_turns = len(current_state.get("messages", [])) // 2 
                 
                 call_record = {
@@ -67,12 +74,9 @@ async def websocket_chat(websocket: WebSocket):
                 print(json.dumps(call_record, indent=2))
                 print("==========================================\n")
                 
-                # TODO: In production, insert `call_record` into your PostgreSQL database here.
-                
                 print("Call completed naturally. Closing connection.")
                 await websocket.close()
                 break
                 
     except WebSocketDisconnect:
         print("\nClient disconnected unexpectedly. Saving partial state to DB...")
-        
